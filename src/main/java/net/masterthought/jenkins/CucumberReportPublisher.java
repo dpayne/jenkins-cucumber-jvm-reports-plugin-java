@@ -30,13 +30,15 @@ public class CucumberReportPublisher extends Recorder {
     public final boolean skippedFails;
     public final boolean undefinedFails;
     public final boolean noFlashCharts;
+    private final String logFileUrls;
 
     @DataBoundConstructor
-    public CucumberReportPublisher(String jsonReportDirectory, String pluginUrlPath, boolean skippedFails, boolean undefinedFails, boolean noFlashCharts) {
+    public CucumberReportPublisher(String jsonReportDirectory, String pluginUrlPath, String logFileUrls, boolean skippedFails, boolean undefinedFails, boolean noFlashCharts) {
         this.jsonReportDirectory = jsonReportDirectory;
         this.pluginUrlPath = pluginUrlPath;
         this.skippedFails = skippedFails;
         this.undefinedFails = undefinedFails;
+        this.logFileUrls = logFileUrls;
         this.noFlashCharts = noFlashCharts;
     }
 
@@ -71,11 +73,18 @@ public class CucumberReportPublisher extends Recorder {
 
         // if we are on a slave
         if (Computer.currentComputer() instanceof SlaveComputer) {
+            // if we are on a slave
             listener.getLogger().println("[CucumberReportPublisher] detected this build is running on a slave ");
             FilePath projectWorkspaceOnSlave = build.getProject().getSomeWorkspace();
             FilePath masterJsonReportDirectory = new FilePath(targetBuildDirectory);
-            listener.getLogger().println("[CucumberReportPublisher] copying json from: " +  projectWorkspaceOnSlave.toURI() + "to reports directory: " + masterJsonReportDirectory.toURI());
-            projectWorkspaceOnSlave.copyRecursiveTo("**/*.json","", masterJsonReportDirectory);
+            if (!jsonReportDirectory.isEmpty()) {
+                listener.getLogger().println("[CucumberReportPublisher] copying json from: " + projectWorkspaceOnSlave.toURI() + "/" + jsonReportDirectory + "to reports directory: " + masterJsonReportDirectory.toURI());
+                FilePath sourcePath = new FilePath(build.getWorkspace(), jsonReportDirectory);
+                sourcePath.copyRecursiveTo(masterJsonReportDirectory);
+            } else {
+                listener.getLogger().println("[CucumberReportPublisher] copying json from: " + projectWorkspaceOnSlave.toURI() + "to reports directory: " + masterJsonReportDirectory.toURI());
+                projectWorkspaceOnSlave.copyRecursiveTo("**/*.json", "", masterJsonReportDirectory);
+            }
         } else {
             // if we are on the master
             listener.getLogger().println("[CucumberReportPublisher] detected this build is running on the master ");
@@ -84,6 +93,7 @@ public class CucumberReportPublisher extends Recorder {
             if (files.length != 0) {
                 listener.getLogger().println("[CucumberReportPublisher] copying json to reports directory: " + targetBuildDirectory);
                 for (String file : files) {
+                    listener.getLogger().println("Copying " + workspaceJsonReportDirectory.getPath() + "/" + file);
                     FileUtils.copyFile(new File(workspaceJsonReportDirectory.getPath() + "/" + file), new File(targetBuildDirectory, file));
                 }
             } else {
@@ -105,14 +115,17 @@ public class CucumberReportPublisher extends Recorder {
                         buildProject,
                         skippedFails,
                         undefinedFails,
-                        !noFlashCharts,
                         true,
+                        !noFlashCharts,
+                        listener.getLogger(),
+                        logFileUrls,
                         false,
                         "");
                 reportBuilder.generateReports();
                 buildResult = reportBuilder.getBuildStatus();
             } catch (Exception e) {
-                e.printStackTrace();
+                listener.getLogger().println("Error in Feature ReportGenerator: ");
+                e.printStackTrace(listener.getLogger());
             }
         } else {
             listener.getLogger().println("[CucumberReportPublisher] there were no json results found in: " + targetBuildDirectory);
